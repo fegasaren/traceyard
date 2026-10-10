@@ -1,0 +1,21 @@
+# The build context contains only the application and its static assets.
+*
+!Dockerfile
+!server.py
+!demo.py
+!security.py
+!requirements.txt
+!LICENSE
+!static/
+!static/**
+
+# Keep local configuration and generated files out even inside static/.
+**/.git
+**/.env
+**/.env.*
+**/*.env
+**/*.log
+**/__pycache__
+**/*.pyc
+**/dist
+**/node_modules

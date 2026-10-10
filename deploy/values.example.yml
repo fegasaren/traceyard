@@ -1,0 +1,28 @@
+# Copy to values.prod.yml in this repository and replace every example address.
+# Secrets are provisioned separately in the destination namespace.
+fullnameOverride: traceyard
+image:
+  repository: registry.example.internal/observability/traceyard
+  tag: "0.3.0"
+existingSecret: traceyard-auth
+publicOrigin: http://traceyard.example.internal
+tempo:
+  url: http://tempo.opentelemetry.svc.cluster.local:3200
+  namespace: opentelemetry
+  podLabels:
+    app.kubernetes.io/name: tempo
+ingress:
+  enabled: true
+  className: nginx
+  host: traceyard.example.internal
+postgres:
+  image:
+    repository: registry.example.internal/mirror/postgres
+    tag: "17-alpine"
+networkPolicy:
+  # Replace with actual AD/DC IPs/subnets; documentation addresses cannot work.
+  ldapCidrs: [192.0.2.10/32, 192.0.2.11/32]
+  ingressController:
+    namespace: ingress-nginx
+    podLabels:
+      app.kubernetes.io/name: ingress-nginx

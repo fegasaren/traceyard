@@ -1,0 +1,105 @@
+replicaCount: 2
+image:
+  repository: traceyard
+  tag: "0.3.0"
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+# Provision outside Git: database-url (application credentials); bundled PostgreSQL
+# also needs app-password (same application password) and postgres-password (bootstrap).
+existingSecret: ""
+publicOrigin: ""
+adminUpn: admin@example.org
+sessionTtlSeconds: 28800
+auditRetentionDays: 30
+httpMaxConcurrency: 16
+# Trust X-Forwarded-For only from these actual ingress/reverse-proxy peer networks.
+# Empty means audit/rate limiting use the direct TCP peer address.
+trustedProxyCidrs: []
+ldapRealms:
+  - name: main
+    url: ldap://ldap.example.org:3268
+    domain: example.org
+    base_dn: DC=example,DC=org
+    aliases: [main]
+  - name: regions
+    url: ldap://regions.example.org:3268
+    domain: regions.example.org
+    base_dn: DC=regions,DC=example,DC=org
+    aliases: []
+# Optional existing Secrets for TEMPO_TENANT_ID / TEMPO_BEARER_TOKEN etc.
+# Items are Secret names; inline credentials are intentionally unsupported.
+extraEnvFromSecrets: []
+tempo:
+  url: ""
+  namespace: opentelemetry
+  podLabels:
+    app.kubernetes.io/name: tempo
+  port: 3200
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
+service:
+  type: ClusterIP
+  port: 8080
+  nodePort: null
+ingress:
+  enabled: false
+  className: ""
+  host: ""
+  annotations: {}
+metrics:
+  scrapeAnnotations: false
+  serviceMonitor:
+    enabled: false
+    labels: {}
+    interval: 30s
+
+postgres:
+  enabled: true
+  image:
+    repository: postgres
+    tag: "17-alpine"
+    pullPolicy: IfNotPresent
+  database: traceyard
+  username: traceyard
+  storage:
+    size: 1Gi
+    storageClassName: ""
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+networkPolicy:
+  enabled: true
+  ingressController:
+    namespace: ingress-nginx
+    podLabels:
+      app.kubernetes.io/name: ingress-nginx
+  prometheus:
+    namespace: monitoring
+    podLabels:
+      app.kubernetes.io/name: prometheus
+  dns:
+    namespace: kube-system
+    podLabels:
+      k8s-app: kube-dns
+  # Actual AD/DC addresses, e.g. host /32s or approved narrow subnets. Required.
+  ldapCidrs: []
+  # Match the ports configured in ldapRealms (e.g. 389/636/3268/3269).
+  ldapPorts: [3268]
+  # Required for NodePort; routable colleague/VPN source networks only.
+  nodePortSourceCidrs: []
+  # Required only when postgres.enabled=false. DATABASE_URL points there.
+  externalPostgresCidrs: []

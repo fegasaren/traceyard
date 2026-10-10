@@ -1,0 +1,6 @@
+apiVersion: v2
+name: traceyard
+description: Traceyard UI for Tempo with LDAP and shared PostgreSQL state
+type: application
+version: 0.3.0
+appVersion: "0.3.0"

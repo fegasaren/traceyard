@@ -1,0 +1,115 @@
+{{- include "traceyard.validate" . -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "traceyard.fullname" . }}
+  labels:
+    {{- include "traceyard.labels" . | nindent 4 }}
+    {{- include "traceyard.selector" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "traceyard.selector" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "traceyard.selector" . | nindent 8 }}
+      annotations:
+        checksum/config: {{ toJson .Values | sha256sum }}
+        {{- if .Values.metrics.scrapeAnnotations }}
+        prometheus.io/scrape: "true"
+        prometheus.io/path: /metrics
+        prometheus.io/port: "8080"
+        {{- end }}
+    spec:
+      automountServiceAccountToken: false
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: traceyard
+          image: {{ printf "%s:%s" .Values.image.repository .Values.image.tag | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: AUTH_MODE
+              value: ldap
+            - name: TRACE_MODE
+              value: tempo
+            - name: HOST
+              value: 0.0.0.0
+            - name: PORT
+              value: "8080"
+            - name: PUBLIC_ORIGIN
+              value: {{ .Values.publicOrigin | quote }}
+            - name: ADMIN_UPN
+              value: {{ .Values.adminUpn | quote }}
+            - name: LDAP_REALMS
+              value: {{ toJson .Values.ldapRealms | quote }}
+            - name: SESSION_TTL_SECONDS
+              value: {{ .Values.sessionTtlSeconds | quote }}
+            - name: AUDIT_RETENTION_DAYS
+              value: {{ .Values.auditRetentionDays | quote }}
+            - name: HTTP_MAX_CONCURRENCY
+              value: {{ .Values.httpMaxConcurrency | quote }}
+            - name: TRUSTED_PROXY_CIDRS
+              value: {{ join "," .Values.trustedProxyCidrs | quote }}
+            - name: TEMPO_URL
+              value: {{ .Values.tempo.url | quote }}
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.existingSecret }}
+                  key: database-url
+          {{- with .Values.extraEnvFromSecrets }}
+          envFrom:
+            {{- range . }}
+            - secretRef:
+                name: {{ . | quote }}
+            {{- end }}
+          {{- end }}
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 24
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 20
+            timeoutSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 32Mi

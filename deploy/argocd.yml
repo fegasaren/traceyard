@@ -1,0 +1,78 @@
+---
+- name: Register the Traceyard Helm application in existing Argo CD
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Require an explicit target and Git source
+      ansible.builtin.assert:
+        that:
+          - traceyard_kube_context is defined and traceyard_kube_context | length > 0
+          - traceyard_repo_url is defined and traceyard_repo_url | length > 0
+          - traceyard_revision is defined and traceyard_revision | length > 0
+          - traceyard_chart_path is defined and traceyard_chart_path | length > 0
+          - traceyard_namespace is defined and traceyard_namespace | length > 0
+          - traceyard_argocd_project is defined and traceyard_argocd_project | length > 0
+          - traceyard_values_files is defined and traceyard_values_files | length > 0
+          - traceyard_values_files is sequence and traceyard_values_files is not string
+        fail_msg: Supply the kube context, Git repository/revision/chart path, destination namespace, Argo CD project and Helm valueFiles.
+
+    - name: Assemble a reviewable Application
+      ansible.builtin.set_fact:
+        traceyard_application:
+          apiVersion: argoproj.io/v1alpha1
+          kind: Application
+          metadata:
+            name: "{{ traceyard_application_name | default('traceyard') }}"
+            namespace: "{{ traceyard_argocd_namespace | default('argocd') }}"
+          spec:
+            project: "{{ traceyard_argocd_project }}"
+            sources: null
+            source:
+              repoURL: "{{ traceyard_repo_url }}"
+              targetRevision: "{{ traceyard_revision }}"
+              path: "{{ traceyard_chart_path }}"
+              helm:
+                releaseName: "{{ traceyard_release_name | default('traceyard') }}"
+                valueFiles: "{{ traceyard_values_files }}"
+            destination:
+              server: "{{ traceyard_destination_server | default('https://kubernetes.default.svc') }}"
+              namespace: "{{ traceyard_namespace }}"
+            syncPolicy:
+              automated: null
+              syncOptions: [CreateNamespace=true]
+
+    - name: Validate the optional private values repository
+      ansible.builtin.assert:
+        that:
+          - traceyard_values_revision is defined and traceyard_values_revision | length > 0
+          - traceyard_values_files | select('match', '^\$values/') | list | length == traceyard_values_files | length
+        fail_msg: Multi-source mode requires a values revision and valueFiles starting with $values/ (Argo CD 2.6+).
+      when: traceyard_values_repo_url | default('') | length > 0
+
+    - name: Combine the public chart with private deployment values
+      ansible.builtin.set_fact:
+        traceyard_application: >-
+          {{ traceyard_application | combine({'spec': {'source': none, 'sources': [
+            {'repoURL': traceyard_repo_url, 'targetRevision': traceyard_revision,
+             'path': traceyard_chart_path,
+             'helm': {'releaseName': traceyard_release_name | default('traceyard'),
+                      'valueFiles': traceyard_values_files}},
+            {'repoURL': traceyard_values_repo_url, 'targetRevision': traceyard_values_revision,
+             'ref': 'values'}
+          ]}}, recursive=true) }}
+      when: traceyard_values_repo_url | default('') | length > 0
+
+    - name: Enable automatic synchronization only when explicitly requested
+      ansible.builtin.set_fact:
+        traceyard_application: >-
+          {{ traceyard_application | combine({'spec': {'syncPolicy': {'automated':
+             {'prune': false, 'selfHeal': true}}}}, recursive=true) }}
+      when: traceyard_automated_sync | default(false) | bool
+
+    - name: Register the Application without running Helm directly
+      kubernetes.core.k8s:
+        context: "{{ traceyard_kube_context }}"
+        kubeconfig: "{{ traceyard_kubeconfig | default(omit) }}"
+        state: present
+        definition: "{{ traceyard_application }}"

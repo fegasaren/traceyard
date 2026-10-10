@@ -1,0 +1,27 @@
+[Unit]
+Description=OpenTelemetry trace UI for Tempo
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+PartOf=docker.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+Environment=OTEL_UI_IMAGE=traceyard:0.3.0
+Environment=BIND_ADDRESS=127.0.0.1
+Environment=HOST_PORT=8080
+EnvironmentFile=-/etc/otel-ui/runtime.env
+ExecStartPre=-/usr/bin/docker rm -f otel-ui
+ExecStart=/usr/bin/docker run --rm --pull=never --name otel-ui --init --read-only --tmpfs /tmp:rw,noexec,nosuid,nodev,size=16m --cap-drop=ALL --security-opt=no-new-privileges:true --log-driver=local --log-opt=max-size=10m --log-opt=max-file=3 --env-file=/etc/otel-ui/otel-ui.env --publish=${BIND_ADDRESS}:${HOST_PORT}:8080 ${OTEL_UI_IMAGE}
+ExecStop=-/usr/bin/docker stop -t 20 otel-ui
+ExecStopPost=-/usr/bin/docker rm -f otel-ui
+Restart=always
+RestartSec=5s
+TimeoutStopSec=30s
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=otel-ui
+
+[Install]
+WantedBy=multi-user.target docker.service

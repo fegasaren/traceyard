@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#172b4d">
+  <title>Discover · Traceyard</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23172b4d'/%3E%3Cpath d='M8 10h16M16 10v14' stroke='%235ae0c2' stroke-width='4'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/app.js" defer></script>
+</head>
+<body class="auth-pending">
+  <main id="auth-screen" class="auth-screen" aria-label="Вход в Traceyard">
+    <div class="auth-card">
+      <div class="auth-brand">Traceyard <span>Discover</span></div>
+      <h1>Вход в рабочее пространство</h1>
+      <p id="auth-status" role="status">Проверяем сессию…</p>
+      <form id="login-form" hidden>
+        <label for="login-username">Доменная учётная запись</label>
+        <input id="login-username" name="username" autocomplete="username" placeholder="user@example.org" required maxlength="254">
+        <label for="login-password">Пароль</label>
+        <input id="login-password" name="password" type="password" autocomplete="current-password" required>
+        <p id="login-error" class="auth-error" role="alert" hidden></p>
+        <button id="login-submit" type="submit" class="button primary">Войти</button>
+      </form>
+      <button id="auth-retry" type="button" class="button secondary" hidden>Повторить проверку</button>
+    </div>
+  </main>
+  <header class="topbar">
+    <div class="topbar-nav"><a class="brand" href="/" aria-label="Traceyard — главная"><span class="brand-mark" aria-hidden="true">t.</span>Traceyard</a><span class="nav-separator">/</span><span class="breadcrumb">Discover</span></div>
+    <div class="topbar-tools"><div class="backend-badge"><span class="connection-dot" id="connection-dot"></span><span id="backend-label">Подключение…</span></div><span id="account-label" class="account-label" hidden></span><button type="button" id="admin-button" class="account-button" hidden>Админка</button><button type="button" id="logout-button" class="account-button" hidden>Выйти</button><button type="button" class="help-button" id="help-button" aria-label="О приложении">?</button></div>
+  </header>
+  <div id="demo-banner" class="demo-banner" hidden><strong>Демо</strong> Синтетические трейсы для знакомства с интерфейсом. Это не данные вашего Tempo.</div>
+  <main class="workspace" id="discover-workspace" hidden>
+    <div class="page-heading"><div class="page-title"><h1>Discover</h1><span>Трейсы OpenTelemetry</span></div><div class="heading-actions"><span class="updated" id="updated-label">Ещё не обновлялось</span><button type="button" class="text-button" id="open-id-button">Открыть Trace ID ↗</button><button type="button" class="button secondary" id="refresh-button"><span class="refresh-icon" aria-hidden="true">↻</span>Обновить</button></div></div>
+    <section class="search-panel" aria-label="Поиск и фильтры">
+      <form id="search-form">
+        <div class="query-row">
+          <label class="data-view"><span>Сервис</span><select id="service" aria-label="Сервис"><option value="">Все сервисы</option></select></label>
+          <div class="query-input-wrap"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4 4"/></svg><input id="operation" placeholder="Поиск по названию операции…" aria-label="Название операции" autocomplete="off"><kbd>/</kbd></div>
+          <select id="time-range" aria-label="Временной диапазон"><option value="900">Последние 15 минут</option><option value="3600" selected>Последний час</option><option value="21600">Последние 6 часов</option><option value="86400">Последние 24 часа</option><option value="604800">Последние 7 дней</option><option value="custom">Свой диапазон</option></select>
+          <button type="submit" class="button primary" id="search-button">Найти трейсы →</button>
+        </div>
+        <div class="custom-range" id="custom-range" hidden><label>С <input type="datetime-local" id="time-start" step="1"></label><label>По <input type="datetime-local" id="time-end" step="1"></label><span>Время вашего браузера</span></div>
+        <div class="filter-row">
+          <button class="add-filter" type="button" id="add-filter-button">＋ Добавить фильтр</button>
+          <label class="filter-field"><span>Статус</span><select id="status"><option value="">Любой</option><option value="error">С ошибкой</option><option value="ok">OK</option><option value="unset">Unset</option></select></label>
+          <label class="filter-field environment-field"><span>Окружение</span><input id="environment" list="environments" placeholder="Все окружения" autocomplete="off"><datalist id="environments"></datalist></label>
+          <label class="filter-field duration-field"><span>Длительность, мс</span><div class="duration-inputs"><input id="min-duration" type="number" min="0" step="any" placeholder="От" aria-label="Минимальная длительность в миллисекундах"><span>—</span><input id="max-duration" type="number" min="0" step="any" placeholder="До" aria-label="Максимальная длительность в миллисекундах"></div></label>
+          <button type="button" id="reset-filters" class="text-button reset-filters">Сбросить фильтры</button>
+        </div>
+        <div class="attribute-builder" id="attribute-builder" hidden><label>Атрибут<input id="attribute-name" list="attribute-names" placeholder="resource.k8s.namespace.name" autocomplete="off"><datalist id="attribute-names"></datalist></label><label>Условие<select id="attribute-operator"><option value="=">равно</option><option value="!=">не равно</option><option value="=~">regex</option><option value="!~">не regex</option><option value="&gt;">больше</option><option value="&gt;=">не меньше</option><option value="&lt;">меньше</option><option value="&lt;=">не больше</option></select></label><label>Тип<select id="attribute-type"><option value="string">Строка</option><option value="number">Число</option><option value="boolean">true / false</option></select></label><label class="attribute-value-label">Значение<input id="attribute-value" list="attribute-values" placeholder="Например, production" autocomplete="off"><datalist id="attribute-values"></datalist></label><button type="button" class="button secondary" id="apply-attribute">Добавить</button><button type="button" class="icon-button" id="cancel-attribute" aria-label="Закрыть добавление атрибута">×</button></div>
+        <div class="query-footer"><div class="chips" id="filter-chips"><span class="muted">Без дополнительных фильтров</span></div><button type="button" id="advanced-toggle" class="text-button" aria-expanded="false">Редактор TraceQL</button></div>
+        <div class="query-preview-row"><span class="query-language">TraceQL</span><code id="query-preview">{ }</code><button type="button" id="copy-query" class="text-button" aria-label="Копировать текущий запрос TraceQL">Копировать</button></div>
+        <div class="advanced-panel" id="advanced-panel" hidden><div><label for="traceql">Запрос TraceQL</label><span>Запрос из редактора заменяет визуальные фильтры.</span></div><textarea id="traceql" rows="3" spellcheck="false" aria-label="Запрос TraceQL"></textarea><div class="advanced-hint"><span>Ctrl / ⌘ + Enter — выполнить запрос</span><a href="https://grafana.com/docs/tempo/latest/traceql/" target="_blank" rel="noreferrer">Синтаксис ↗</a></div></div>
+      </form>
+    </section>
+    <div class="notice" id="facet-notice" hidden role="status"></div>
+    <div class="error-banner" id="error-banner" hidden role="alert"></div>
+    <div class="discover-layout">
+      <aside class="fields-sidebar" aria-label="Поля для фильтра">
+        <div class="sidebar-heading"><h2>Поля для фильтра</h2><span class="count-badge" id="field-count">0</span></div>
+        <label class="field-search-wrap"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4 4"/></svg><input id="field-search" type="search" placeholder="Найти поле" aria-label="Поиск поля"></label>
+        <p class="sidebar-hint">Выберите поле, чтобы добавить фильтр.</p>
+        <div class="field-list" id="field-list"></div>
+        <div class="field-legend"><span><b>R</b> Resource</span><span><b>S</b> Span</span></div>
+      </aside>
+      <div class="discover-content">
+        <div class="results-heading"><div class="results-title"><h2>Трейсы</h2><span class="count-badge" id="result-count">0</span><span class="results-window" id="results-window"></span></div><div class="results-controls"><label>Лимит <select id="limit" aria-label="Лимит результатов"><option>20</option><option selected>50</option><option>100</option><option>200</option></select></label></div></div>
+        <section class="histogram-panel" id="histogram-panel" aria-label="Трейсы во времени" hidden>
+          <div class="histogram-heading"><h2>Трейсы во времени</h2><span id="histogram-summary">По загруженным результатам</span></div>
+          <div class="histogram-chart"><span class="histogram-y-label">Трейсы</span><div class="trace-histogram" id="trace-histogram"></div><div class="histogram-axis" id="histogram-axis"></div></div>
+          <div class="histogram-hint">Нажмите на столбец, чтобы сузить период.</div>
+          <div class="stats-strip" id="stats-strip" hidden><div><span class="stat-label">В выборке</span><strong id="stat-count">—</strong></div><div><span class="stat-label">Медиана</span><strong id="stat-median">—</strong></div><div><span class="stat-label">Макс. длительность</span><strong id="stat-max">—</strong></div><div><span class="stat-label">Сервисов</span><strong id="stat-services">—</strong></div></div>
+        </section>
+        <section class="results-panel" aria-label="Результаты поиска"><div class="table-scroll"><table id="results-table"><thead><tr><th><button type="button" class="sort-button" data-sort="start">Время <span>↓</span></button></th><th><button type="button" class="sort-button" data-sort="service" title="Сервис корневого спана трейса">Корневой сервис <span></span></button></th><th>Операция / Trace ID</th><th><button type="button" class="sort-button" data-sort="duration">Длительность <span></span></button></th><th title="Количество совпавших спанов из spanSets; не общее число спанов трейса">Совп. спаны</th><th aria-label="Открыть"></th></tr></thead><tbody id="results-body"></tbody></table></div><div class="empty-state" id="empty-state"><div class="empty-symbol">⌁</div><h3>Ищем трейсы</h3><p>Подключаемся к источнику данных.</p></div><footer class="table-footer"><span id="table-summary">Выберите фильтры и запустите поиск</span><span class="keyboard-hint"><kbd>/</kbd> поиск <span>·</span><kbd>Esc</kbd> закрыть трейс</span></footer></section>
+      </div>
+    </div>
+    <footer class="workspace-footer"><span>OpenTelemetry → Tempo → Traceyard</span><span>Время в часовом поясе браузера</span></footer>
+  </main>
+  <section id="admin-panel" class="admin-panel" aria-label="Администрирование" hidden>
+    <div class="admin-heading"><div><h1>Администрирование</h1><p>Учётные записи, блокировки и журнал действий.</p></div><button id="admin-back" class="button secondary" type="button">← Discover</button></div>
+    <p id="admin-error" class="error-banner" role="alert" hidden></p>
+    <section class="admin-section" aria-labelledby="admin-users-heading">
+      <div class="admin-section-heading"><h2 id="admin-users-heading">Пользователи</h2><form id="admin-users-form" class="admin-filters"><input id="admin-users-search" type="search" placeholder="Найти учётную запись" aria-label="Поиск пользователей"><button class="button secondary" type="submit">Найти</button></form></div>
+      <div class="admin-table-scroll"><table class="admin-table"><thead><tr><th>Учётная запись</th><th>Роль</th><th>Статус</th><th>Последний вход</th><th>Действие</th></tr></thead><tbody id="admin-users-body"></tbody></table></div>
+      <div class="admin-pagination"><span id="admin-users-status" role="status"></span><button id="admin-users-more" class="button secondary" type="button" hidden>Ещё пользователи</button></div>
+    </section>
+    <section class="admin-section" aria-labelledby="admin-audit-heading">
+      <div class="admin-section-heading"><h2 id="admin-audit-heading">Журнал действий</h2><span class="muted">Сначала новые</span></div>
+      <form id="admin-audit-form" class="admin-filters admin-audit-filters"><label>Пользователь<input id="admin-audit-actor" placeholder="user@example.org"></label><label>Событие<input id="admin-audit-event" placeholder="Например, login.success"></label><button class="button secondary" type="submit">Применить</button></form>
+      <div class="admin-table-scroll"><table class="admin-table admin-audit-table"><thead><tr><th>Время</th><th>Пользователь</th><th>Событие</th><th>Объект</th><th>Результат</th><th>IP</th><th>Подробности</th></tr></thead><tbody id="admin-audit-body"></tbody></table></div>
+      <div class="admin-pagination"><span id="admin-audit-status" role="status"></span><button id="admin-audit-more" class="button secondary" type="button" hidden>Более ранние события</button></div>
+    </section>
+  </section>
+  <div class="drawer-backdrop" id="drawer-backdrop" hidden></div>
+  <section class="trace-drawer" id="trace-drawer" role="dialog" aria-modal="true" aria-labelledby="trace-title" hidden tabindex="-1"><header class="drawer-header"><div><div class="eyebrow">ТРЕЙС</div><h2 id="trace-title">Загрузка трейса…</h2><div class="trace-id-row"><code id="trace-id"></code><button type="button" class="text-button" id="copy-trace-id">Копировать ID</button><button type="button" class="text-button" id="copy-trace-link">Ссылка ↗</button><button type="button" class="text-button" id="download-trace">Скачать JSON ↓</button></div></div><button type="button" class="close-button" id="close-trace" aria-label="Закрыть трейс">×</button></header><div class="drawer-content" id="drawer-content"></div></section>
+  <dialog id="id-dialog"><form id="id-form"><h2>Открыть трейс</h2><p>Вставьте Trace ID: 16 или 32 шестнадцатеричных символа.</p><label for="trace-id-input">Trace ID</label><input id="trace-id-input" placeholder="4bf92f3577b34da6a3ce929d0e0e4736" pattern="[a-fA-F0-9]{16}|[a-fA-F0-9]{32}" required autocomplete="off"><div class="dialog-actions"><button type="button" class="button secondary" id="cancel-id">Отмена</button><button class="button primary" type="submit">Открыть трейс</button></div></form></dialog>
+  <dialog id="help-dialog"><h2>Traceyard Discover</h2><p>Поиск и просмотр OpenTelemetry-трейсов в Tempo.</p><p>Выберите период и сервис, добавьте условия по атрибутам или напишите свой TraceQL. Поля слева открывают форму фильтра. Клик по результату откроет дерево спанов; клик по спану — его атрибуты, события и связи.</p><p>Фильтры объединяются через <code>&amp;&amp;</code> и должны выполняться на одном спане. Гистограмма, медиана и другие показатели рассчитаны только по загруженной выборке. «Совп. спаны» показывает совпадения поиска, а не размер всего трейса.</p><p>Период применяется к поиску; открытие по Trace ID от него не зависит. Время отображается в часовом поясе браузера.</p><p id="help-backend"></p><div class="dialog-actions"><button type="button" class="button primary" id="close-help">Понятно</button></div></dialog>
+  <div class="toast" id="toast" role="status" hidden></div>
+</body>
+</html>
