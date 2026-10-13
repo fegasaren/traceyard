@@ -27,12 +27,12 @@ Requires Docker, or Python 3.11+ for a source checkout. These commands run from 
 ```bash
 git clone https://github.com/fegasaren/traceyard.git
 cd traceyard
-docker build -t traceyard:0.3.0 .
+docker build -t traceyard:0.3.1 .
 docker run --rm --name traceyard-demo \
   --read-only --tmpfs /tmp:rw,noexec,nosuid,nodev,size=16m \
   --cap-drop=ALL --security-opt=no-new-privileges:true \
   -e TRACE_MODE=demo -e AUTH_MODE=disabled \
-  -p 127.0.0.1:8080:8080 traceyard:0.3.0
+  -p 127.0.0.1:8080:8080 traceyard:0.3.1
 ```
 
 Open [localhost:8080](http://127.0.0.1:8080). The demo uses synthetic data and does not need Tempo, LDAP, or PostgreSQL. Authentication is explicitly disabled; there is no admin account in this mode.
@@ -157,6 +157,10 @@ The runner also needs the Python `kubernetes` package. Optional variables includ
 
 ### Network policy, resources, and health
 
+SIGTERM/SIGINT stop accepting requests and wait for active handlers and final audit writes.
+The chart allows 60 seconds (`terminationGracePeriodSeconds`); increase it if you raise
+upstream timeouts. Kubernetes can still force termination after that period.
+
 NetworkPolicy is enabled by default. It permits UI ingress from the configured ingress controller and, when scraping is enabled, Prometheus. Egress permits configured DNS on port 53, Tempo, directory CIDRs on port 3268, and PostgreSQL on port 5432. The bundled database accepts ingress only from this release's UI pods and has no permitted outbound connections. Empty directory CIDRs and `/0` are rejected. DNS names cannot substitute for IP/CIDR entries.
 
 Review these rules against the actual CNI, DNS, and ingress setup. NodeLocal DNS and host-network ingress may require different rules. `networkPolicy.ldapPorts` defaults to `[3268]`; when changing realm URLs, allow their actual ports, such as `389`, `636`, or `3269`. If enabling NodePort, set `service.nodePort` and explicit `networkPolicy.nodePortSourceCidrs`; `externalTrafficPolicy: Local` serves only nodes with ready UI pods. Source-IP preservation and policy enforcement depend on the CNI.
@@ -173,7 +177,7 @@ These are initial sizing values, not load-test results. `/healthz` checks the pr
 For environments that import Docker images without pulling a registry:
 
 ```bash
-OTEL_UI_IMAGE=traceyard:0.3.0 bash scripts/build-release.sh 0.3.0
+OTEL_UI_IMAGE=traceyard:0.3.1 bash scripts/build-release.sh 0.3.1
 ```
 
 The script builds an image and produces a `dist/` bundle with a Docker-loadable archive, checksums, image/platform metadata, deployment examples, and the chart. It supports `linux/amd64` and `linux/arm64`; set `PLATFORM` explicitly for a different target. Verify `SHA256SUMS` before `docker load`. Use unique image tags for upgrades and retain the previous image for rollback.

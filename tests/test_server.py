@@ -13,6 +13,7 @@ import json
 import os
 from pathlib import Path
 import socket
+import signal
 import subprocess
 import sys
 import tempfile
@@ -92,7 +93,7 @@ class FakeTempo:
 
 
 class RunningApp:
-    def __init__(self, mode="demo", input_timeout=None, **overrides):
+    def __init__(self, mode="demo", input_timeout=None, startup_code=None, **overrides):
         with contextlib.closing(socket.socket()) as port_socket:
             port_socket.bind(("127.0.0.1", 0))
             self.port = port_socket.getsockname()[1]
@@ -104,9 +105,14 @@ class RunningApp:
         environment.update({key: str(value) for key, value in overrides.items()})
         self.logs = tempfile.TemporaryFile(mode="w+b")
         command = [sys.executable, str(APP_ROOT / "server.py")]
-        if input_timeout is not None:
+        if input_timeout is not None or startup_code is not None:
             # Shorten only the fixture's deadline; production keeps a fixed 15s.
-            command = [sys.executable, "-c", f"import server; server.INPUT_TIMEOUT_SECONDS = {float(input_timeout)!r}; server.main()"]
+            setup = ["import server"]
+            if input_timeout is not None:
+                setup.append(f"server.INPUT_TIMEOUT_SECONDS = {float(input_timeout)!r}")
+            if startup_code is not None:
+                setup.append(startup_code)
+            command = [sys.executable, "-c", "\n".join([*setup, "server.main()"])]
         self.process = subprocess.Popen(
             command,
             cwd=APP_ROOT,
@@ -153,6 +159,94 @@ class RunningApp:
                 self.process.kill()
                 self.process.wait(timeout=3)
         self.logs.close()
+
+
+class ShutdownTests(unittest.TestCase):
+    def test_idle_sigterm_and_sigint_exit_cleanly(self):
+        for signum in (signal.SIGTERM, signal.SIGINT):
+            with self.subTest(signal=signum):
+                app = RunningApp()
+                try:
+                    app.process.send_signal(signum)
+                    self.assertEqual(app.process.wait(timeout=3), 0)
+                finally:
+                    app.close()
+
+    def test_sigterm_drains_active_tempo_request_and_tolerates_repeated_signal(self):
+        entered, release = threading.Event(), threading.Event()
+        tempo = FakeTempo().start()
+
+        def response(request):
+            entered.set()
+            release.wait(timeout=3)
+            return tempo.default_response(request)
+
+        tempo.responder = response
+        app = RunningApp(mode="tempo", TEMPO_URL=tempo.url)
+        try:
+            with ThreadPoolExecutor(max_workers=1) as pool:
+                result = pool.submit(app.request, "/api/search?q=%7B%7D")
+                self.assertTrue(entered.wait(timeout=2))
+                app.process.send_signal(signal.SIGTERM)
+                # Exceed serve_forever's 0.25s poll; otherwise a daemon-worker
+                # regression could complete before shutdown reaches server_close.
+                with self.assertRaises(subprocess.TimeoutExpired):
+                    app.process.wait(timeout=0.75)
+                app.process.send_signal(signal.SIGTERM)
+                self.assertIsNone(app.process.poll())
+                release.set()
+                self.assertEqual(result.result(timeout=3)[0], 200)
+                self.assertEqual(app.process.wait(timeout=3), 0)
+        finally:
+            release.set()
+            app.close()
+            tempo.close()
+
+    def test_sigterm_waits_for_completion_audit_after_response(self):
+        with tempfile.TemporaryDirectory() as directory:
+            entered = Path(directory) / "entered"
+            release = Path(directory) / "release"
+            completed = Path(directory) / "completed"
+            # A gated audit sink proves shutdown drains work after the HTTP body
+            # is delivered; PostgreSQL persistence is covered by integration tests.
+            startup = f'''
+original_config_init = server.Config.__init__
+class GatedAudit:
+    def session(self, _token):
+        return {{"user": {{"username": "viewer@example.org", "role": "viewer"}}, "csrf": ""}}
+    def audit(self, _actor, event, *_args):
+        if event == "request.completed":
+            server.Path({str(entered)!r}).touch()
+            deadline = server.time.monotonic() + 3
+            while not server.Path({str(release)!r}).exists():
+                if server.time.monotonic() >= deadline:
+                    raise RuntimeError("Test audit gate timed out")
+                server.time.sleep(0.01)
+            server.Path({str(completed)!r}).touch()
+def configure(self):
+    original_config_init(self)
+    self.security = GatedAudit()
+server.Config.__init__ = configure
+'''
+            app = RunningApp(startup_code=startup)
+            try:
+                self.assertEqual(app.request("/api/search?q=%7B%7D")[0], 200)
+                deadline = time.monotonic() + 2
+                while not entered.exists() and time.monotonic() < deadline:
+                    time.sleep(0.01)
+                self.assertTrue(entered.exists())
+                app.process.send_signal(signal.SIGTERM)
+                with self.assertRaises(subprocess.TimeoutExpired):
+                    app.process.wait(timeout=0.75)
+                self.assertIsNone(app.process.poll())
+                self.assertFalse(completed.exists())
+                app.process.send_signal(signal.SIGTERM)
+                release.touch()
+                self.assertEqual(app.process.wait(timeout=3), 0)
+                self.assertTrue(completed.exists())
+            finally:
+                release.touch()
+                app.close()
 
 
 class TempoProxyTests(unittest.TestCase):

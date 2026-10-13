@@ -3,7 +3,7 @@ set -Eeuo pipefail
 umask 022
 
 project_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
-version="${1:-0.3.0}"
+version="${1:-0.3.1}"
 if [[ ! "$version" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]]; then
     printf 'Invalid version: use a Docker tag with letters, digits, _, . or -.\n' >&2
     exit 2

@@ -1,4 +1,24 @@
-# Validation — 0.3.0
+# Validation
+
+## 0.3.1 — 2026-10-13
+
+- All **57 Python tests passed, none skipped**, inside the exact `linux/amd64`
+  release image with real disposable PostgreSQL 17, read-only filesystem,
+  UID 10001, dropped capabilities, 256 MiB memory and 0.5 CPU.
+- New subprocess checks cover idle SIGTERM/SIGINT, a pending Tempo response with
+  repeated SIGTERM, and draining the completion-audit callback after sending the
+  HTTP body. Reintroducing daemon request threads makes both drain tests fail.
+  LDAP bind remains mocked; the new audit drain check uses a gated sink.
+- The container also stopped as PID 1 with exit 0 in under four seconds, without an
+  init wrapper or forced kill. The Helm Deployment allows 60 seconds to drain;
+  requests exceeding that grace period may still be terminated by Kubernetes.
+- Helm strict lint passed for the public example and an INT-shaped synthetic
+  overlay. Rendering verified two app replicas, exact image tags, PostgreSQL,
+  NetworkPolicies and the 60-second grace period. Ansible syntax and JS syntax passed.
+- Real bank LDAP, Tempo, CNI, Prometheus and Argo CD have not been exercised.
+  The UI itself is unchanged from the previously verified 0.3.0.
+
+## 0.3.0 baseline
 
 Verified locally on 2026-10-10–11. These checks do not assert that a production
 Active Directory, Tempo endpoint, Kubernetes network or Argo CD installation works.

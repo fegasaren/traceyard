@@ -13,6 +13,7 @@ import mimetypes
 import os
 import re
 import socket
+import signal
 import secrets
 import ssl
 import time
@@ -64,7 +65,7 @@ class Config:
         if not 1 <= self.max_concurrency <= 128:
             raise ValueError("HTTP_MAX_CONCURRENCY must be in [1,128]")
         self.tempo_url = os.environ.get("TEMPO_URL", "").rstrip("/")
-        self.headers = {"Accept": "application/json", "User-Agent": "traceyard/0.3.0"}
+        self.headers = {"Accept": "application/json", "User-Agent": "traceyard/0.3.1"}
         self.max_response = int(os.environ.get("TEMPO_MAX_RESPONSE_BYTES", str(8 * 1024 * 1024)))
         if not 1024 <= self.max_response <= MAX_RESPONSE_BYTES:
             raise ValueError("TEMPO_MAX_RESPONSE_BYTES must be between 1024 and 33554432")
@@ -116,7 +117,8 @@ class Config:
 
 
 class AppServer(ThreadingHTTPServer):
-    daemon_threads = True
+    daemon_threads = False
+    block_on_close = True
     allow_reuse_address = True
 
     def __init__(self, address, config):
@@ -156,7 +158,7 @@ class AppServer(ThreadingHTTPServer):
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "Traceyard/0.3.0"
+    server_version = "Traceyard/0.3.1"
     sys_version = ""
 
     def setup(self):
@@ -604,12 +606,23 @@ def main():
         # Configuration validation errors do not include the supplied secret values.
         LOG.error("Startup failed: %s", str(exc) if isinstance(exc, ValueError) else type(exc).__name__)
         raise SystemExit(1)
+    shutdown_requested = False
+
+    def request_shutdown(_signum, _frame):
+        nonlocal shutdown_requested
+        if shutdown_requested:
+            return
+        shutdown_requested = True
+        # shutdown() waits for serve_forever(), so it must run in another thread.
+        threading.Thread(target=server.shutdown, name="http-shutdown", daemon=True).start()
+
+    signal.signal(signal.SIGTERM, request_shutdown)
+    signal.signal(signal.SIGINT, request_shutdown)
     LOG.info("Otel UI listening on port %s, mode=%s", port, config.mode)
     try:
         server.serve_forever(poll_interval=0.25)
-    except KeyboardInterrupt:
-        pass
     finally:
+        # Non-daemon request threads finish their responses and final audit writes.
         server.server_close()
 
 

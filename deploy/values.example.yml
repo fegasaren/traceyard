@@ -3,7 +3,7 @@
 fullnameOverride: traceyard
 image:
   repository: registry.example.internal/observability/traceyard
-  tag: "0.3.0"
+  tag: "0.3.1"
 existingSecret: traceyard-auth
 publicOrigin: http://traceyard.example.internal
 tempo:

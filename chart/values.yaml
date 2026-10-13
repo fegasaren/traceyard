@@ -1,7 +1,9 @@
 replicaCount: 2
+# Allow the default 30s Tempo timeout, input deadline and final audit writes to drain.
+terminationGracePeriodSeconds: 60
 image:
   repository: traceyard
-  tag: "0.3.0"
+  tag: "0.3.1"
   pullPolicy: IfNotPresent
 imagePullSecrets: []
 nameOverride: ""
